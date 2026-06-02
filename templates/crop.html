@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Newspaper Segmenter - Pro Viewport</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; display: flex; height: 100vh; background: #121214; color: #e2e8f0; overflow: hidden; }
+
+        #sidebar { width: 300px; min-width: 300px; background: #1a202c; border-right: 1px solid #2d3748; display: flex; flex-direction: column; z-index: 20; box-shadow: 2px 0 10px rgba(0,0,0,0.2); }
+        #tree-header { padding: 16px 20px; border-bottom: 1px solid #2d3748; font-weight: 700; font-size: 15px; background: #1a202c; color: #fff; letter-spacing: 0.5px; }
+        #file-tree { flex: 1; overflow-y: auto; padding: 12px; }
+
+        .folder-wrapper { margin-top: 8px; }
+        .tree-folder { font-weight: 600; padding: 8px 10px; color: #cbd5e0; cursor: pointer; display: flex; align-items: center; gap: 8px; border-radius: 6px; user-select: none; transition: background 0.15s ease; }
+        .tree-folder:hover { background: #2d3748; color: #fff; }
+        .folder-toggle-icon { font-size: 10px; color: #a0aec0; }
+        .file-list { margin-left: 16px; border-left: 1px solid #2d3748; padding-left: 4px; padding-top: 4px; }
+        .hidden { display: none; }
+        .tree-file { padding: 8px 12px; margin: 2px 0; cursor: pointer; border-radius: 6px; font-size: 14px; color: #a0aec0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: all 0.15s ease; }
+        .tree-file:hover { background: #2d3748; color: #e2e8f0; }
+        .tree-file.active { background: #3182ce; color: white; font-weight: 500; }
+
+        #workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+        #top-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 16px 32px; background: #1a202c; border-bottom: 1px solid #2d3748; z-index: 10; }
+        #current-info { font-size: 16px; font-weight: 500; color: #e2e8f0; display: flex; align-items: center; gap: 8px; }
+
+        .btn-group { display: flex; gap: 12px; }
+        button { padding: 10px 20px; font-size: 14px; border: none; border-radius: 6px; background: #3182ce; color: white; font-weight: 600; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        button:hover:not(:disabled) { background: #2b6cb0; transform: translateY(-1px); }
+        button:active:not(:disabled) { transform: translateY(0); }
+
+        /* Disabled Button State */
+        button:disabled { background: #4a5568 !important; color: #a0aec0 !important; cursor: not-allowed !important; transform: none !important; box-shadow: none !important; }
+
+        #pdf-btn { background: #e53e3e; }
+        #pdf-btn:hover:not(:disabled) { background: #c53030; }
+
+        /* Infinite Viewport Stage */
+        #stage-area { flex: 1; position: relative; overflow: hidden; background: #0f0f11; }
+
+        #zoom-toolbar { position: absolute; left: 20px; top: 20px; display: flex; flex-direction: column; gap: 8px; background: #1a202c; padding: 8px; border-radius: 8px; border: 1px solid #2d3748; box-shadow: 0 4px 12px rgba(0,0,0,0.5); z-index: 10; }
+        .icon-btn { padding: 8px 12px; font-size: 16px; font-weight: bold; background: transparent; color: #a0aec0; border: 1px solid transparent; border-radius: 4px; box-shadow: none; cursor: pointer; transition: background 0.15s ease; }
+        .icon-btn:hover { background: #2d3748; color: #fff; }
+        .icon-btn.active-tool { background: #3182ce; color: #fff; }
+
+        #canvas-wrapper { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+        canvas { display: block; width: 100%; height: 100%; outline: none; background-color: #0f0f11; background-image: radial-gradient(#2d3748 1px, transparent 1px); background-size: 20px 20px; }
+
+        /* Toast Notification System */
+        #toast-container { position: absolute; top: 80px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 1000; pointer-events: none; }
+        .toast { background: #2d3748; color: #e2e8f0; padding: 12px 20px; border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border-left: 4px solid #3182ce; transform: translateX(120%); transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); font-weight: 500; font-size: 14px; pointer-events: auto; }
+        .toast.show { transform: translateX(0); }
+        .toast.success { border-left-color: #38a169; }
+        .toast.warning { border-left-color: #d69e2e; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <div id="tree-header">Newspaper Pipeline</div>
+    <div id="file-tree">Loading assets...</div>
+</div>
+
+<div id="workspace">
+    <div id="toast-container"></div>
+
+    <div id="top-toolbar">
+        <div id="current-info"><span style="color: #a0aec0;">No Image Selected</span></div>
+        <div class="btn-group">
+            <button id="next-btn" onclick="navigateImage(1)" title="Proceed to the next image in the pipeline">Next Image ➔</button>
+            <button id="pdf-btn" onclick="generatePDF()" title="Extract all boxes and compile into a PDF">Export PDF</button>
+        </div>
+    </div>
+
+    <div id="stage-area">
+        <div id="zoom-toolbar">
+            <button class="icon-btn" onclick="handleZoomButton(1.2)" title="Zoom In (+)">+</button>
+            <button class="icon-btn" onclick="handleZoomButton(0.8)" title="Zoom Out (-)">−</button>
+            <button class="icon-btn" onclick="resetView()" title="Fit to Screen" style="font-size: 14px;">[ ]</button>
+            <button id="pan-toggle-btn" class="icon-btn" onclick="togglePanTool()" title="Hand Tool: Click & Drag to Pan">✋</button>
+        </div>
+
+        <div id="canvas-wrapper">
+            <canvas id="annotationCanvas" tabindex="0"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let fileTree = [];
+    let folderStates = {};
+    let currentFolderIdx = 0;
+    let currentImgIdx = 0;
+
+    let canvas = document.getElementById('annotationCanvas');
+    let ctx = canvas.getContext('2d');
+    let img = new Image();
+    let boxes = [];
+
+    // Infinite Viewport Variables
+    let viewportWidth = 0;
+    let viewportHeight = 0;
+    let baseScale = 1;
+    let zoom = 1;
+    let panX = 0;
+    let panY = 0;
+
+    let selectedBoxIdx = -1;
+    let action = 'IDLE';
+
+    // Panning States
+    let isSpacePressed = false;
+    let isPanToolLocked = false; // Toggled by the hand button
+
+    let startImgX, startImgY, currentImgX, currentImgY;
+    let originalBoxState = null;
+    let activeHandle = null;
+    let hoverHandle = null;
+
+    // Toast Notification Function
+    function showToast(message, type = "info") {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerText = message;
+
+        container.appendChild(toast);
+
+        // Trigger animation
+        requestAnimationFrame(() => {
+            setTimeout(() => toast.classList.add('show'), 10);
+        });
+
+        // Remove after 3.5 seconds
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300); // Wait for slide out animation
+        }, 3500);
+    }
+
+    // Window resize observer
+    function resizeCanvas() {
+        const wrapper = document.getElementById('canvas-wrapper');
+        canvas.width = wrapper.clientWidth;
+        canvas.height = wrapper.clientHeight;
+        viewportWidth = canvas.width;
+        viewportHeight = canvas.height;
+        if (img.src) draw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    async function loadTree() {
+        const res = await fetch('/api/tree');
+        fileTree = await res.json();
+        fileTree.forEach((folderItem, fIdx) => { folderStates[fIdx] = (fIdx === currentFolderIdx); });
+        renderTree();
+        resizeCanvas();
+        if (fileTree.length > 0 && fileTree[0].images.length > 0) loadImage(0, 0);
+    }
+
+    function toggleFolder(fIdx) { folderStates[fIdx] = !folderStates[fIdx]; renderTree(); }
+
+    function renderTree() {
+        const treeContainer = document.getElementById('file-tree');
+        treeContainer.innerHTML = '';
+        fileTree.forEach((folderItem, fIdx) => {
+            const folderWrapper = document.createElement('div');
+            folderWrapper.className = 'folder-wrapper';
+            const isExpanded = folderStates[fIdx];
+            const folderDiv = document.createElement('div');
+            folderDiv.className = 'tree-folder';
+            folderDiv.innerHTML = `<span class="folder-toggle-icon">${isExpanded ? '▼' : '►'}</span> 📁 ${folderItem.folder}`;
+            folderDiv.onclick = () => toggleFolder(fIdx);
+            folderWrapper.appendChild(folderDiv);
+
+            const fileListDiv = document.createElement('div');
+            fileListDiv.className = `file-list ${isExpanded ? '' : 'hidden'}`;
+            folderItem.images.forEach((imgName, iIdx) => {
+                const fileDiv = document.createElement('div');
+                fileDiv.className = `tree-file ${fIdx === currentFolderIdx && iIdx === currentImgIdx ? 'active' : ''}`;
+                fileDiv.innerText = `📄 ${imgName}`;
+                fileDiv.onclick = (e) => { e.stopPropagation(); loadImage(fIdx, iIdx); };
+                fileListDiv.appendChild(fileDiv);
+            });
+            folderWrapper.appendChild(fileListDiv);
+            treeContainer.appendChild(folderWrapper);
+        });
+    }
+
+    // UI State Updater
+    function updateNavButtons() {
+        const nextBtn = document.getElementById('next-btn');
+        const isLastFolder = currentFolderIdx === fileTree.length - 1;
+        const isLastImageInFolder = currentImgIdx === fileTree[currentFolderIdx].images.length - 1;
+
+        if (isLastFolder && isLastImageInFolder) {
+            nextBtn.disabled = true;
+            nextBtn.innerText = "Pipeline Complete";
+        } else {
+            nextBtn.disabled = false;
+            nextBtn.innerText = "Next Image ➔";
+        }
+    }
+
+    async function loadImage(folderIdx, imgIdx) {
+        currentFolderIdx = folderIdx;
+        currentImgIdx = imgIdx;
+        folderStates[currentFolderIdx] = true;
+        selectedBoxIdx = -1;
+
+        renderTree();
+        updateNavButtons();
+
+        const folder = fileTree[currentFolderIdx].folder;
+        const filename = fileTree[currentFolderIdx].images[currentImgIdx];
+        document.getElementById('current-info').innerHTML = `<span style="color:#63b3ed">📁 ${folder}</span> <span style="color:#4a5568">/</span> 📄 ${filename}`;
+
+        const res = await fetch(`/api/load_boxes?folder=${encodeURIComponent(folder)}&filename=${encodeURIComponent(filename)}`);
+        const data = await res.json();
+        boxes = data.boxes.map(normalizeBox);
+
+        img.src = `/images/${encodeURIComponent(folder)}/${encodeURIComponent(filename)}`;
+        img.onload = () => {
+            resetView();
+        };
+    }
+
+    function resetView() {
+        if (!img.src) return;
+        const padding = 40;
+        const scaleX = (viewportWidth - padding * 2) / img.naturalWidth;
+        const scaleY = (viewportHeight - padding * 2) / img.naturalHeight;
+        baseScale = Math.min(scaleX, scaleY, 1);
+        zoom = 1;
+
+        const drawnWidth = img.naturalWidth * baseScale;
+        const drawnHeight = img.naturalHeight * baseScale;
+        panX = (viewportWidth - drawnWidth) / 2;
+        panY = (viewportHeight - drawnHeight) / 2;
+
+        draw();
+    }
+
+    function getImgCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        const cssX = e.clientX - rect.left;
+        const cssY = e.clientY - rect.top;
+
+        const totalScale = baseScale * zoom;
+        const imgX = (cssX - panX) / totalScale;
+        const imgY = (cssY - panY) / totalScale;
+
+        return { x: imgX, y: imgY, cssX, cssY };
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (!img.complete || !img.src) return;
+
+        ctx.save();
+        ctx.translate(panX, panY);
+
+        const totalScale = baseScale * zoom;
+        ctx.scale(totalScale, totalScale);
+
+        ctx.drawImage(img, 0, 0);
+
+        const invScale = 1 / totalScale;
+
+        boxes.forEach((box, i) => {
+            const w = box.x2 - box.x1;
+            const h = box.y2 - box.y1;
+            const isSelected = (i === selectedBoxIdx);
+
+            ctx.strokeStyle = isSelected ? '#ffb703' : '#00f0ff';
+            ctx.lineWidth = (isSelected ? 3 : 2) * invScale;
+            ctx.strokeRect(box.x1, box.y1, w, h);
+
+            if (isSelected) {
+                ctx.fillStyle = 'rgba(255, 183, 3, 0.15)';
+                ctx.fillRect(box.x1, box.y1, w, h);
+
+                const hSize = 8 * invScale;
+                ctx.fillStyle = '#ffb703';
+                const corners = [
+                    {cx: box.x1, cy: box.y1}, {cx: box.x2, cy: box.y1},
+                    {cx: box.x1, cy: box.y2}, {cx: box.x2, cy: box.y2}
+                ];
+                corners.forEach(c => {
+                    ctx.fillRect(c.cx - hSize/2, c.cy - hSize/2, hSize, hSize);
+                });
+            }
+        });
+
+        if (action === 'DRAWING') {
+            ctx.strokeStyle = '#ffb703';
+            ctx.lineWidth = 2 * invScale;
+            ctx.setLineDash([6 * invScale, 6 * invScale]);
+            ctx.strokeRect(startImgX, startImgY, currentImgX - startImgX, currentImgY - startImgY);
+            ctx.setLineDash([]);
+        }
+        ctx.restore();
+    }
+
+    // --- INTERACTION LOGIC ---
+
+    function togglePanTool() {
+        isPanToolLocked = !isPanToolLocked;
+        const btn = document.getElementById('pan-toggle-btn');
+        if (isPanToolLocked) {
+            btn.classList.add('active-tool');
+        } else {
+            btn.classList.remove('active-tool');
+        }
+        updateCursor();
+    }
+
+    window.addEventListener('keydown', async (e) => {
+        if (e.code === 'Space' && document.activeElement !== canvas) {
+            isSpacePressed = true; updateCursor(); e.preventDefault();
+        }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedBoxIdx !== -1) {
+            e.preventDefault();
+            boxes.splice(selectedBoxIdx, 1);
+            selectedBoxIdx = -1;
+            draw();
+            await autoSave();
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') {
+            isSpacePressed = false; updateCursor();
+        }
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const { cssX, cssY } = getImgCoords(e);
+
+        const zoomIntensity = 0.08;
+        const zoomDirection = e.deltaY < 0 ? 1 : -1;
+        const theoreticalZoom = zoom * Math.pow(1 + zoomIntensity, zoomDirection);
+
+        // UX LOCK: Strictly block shrinking below 1.0 (Normal position)
+        let targetZoom = theoreticalZoom;
+        if (targetZoom < 1.0) targetZoom = 1.0;
+        if (targetZoom > 15) targetZoom = 15;
+
+        const actualFactor = targetZoom / zoom;
+        panX = cssX - (cssX - panX) * actualFactor;
+        panY = cssY - (cssY - panY) * actualFactor;
+        zoom = targetZoom;
+
+        // Snapping perfect center if zoom returns to normal
+        if (zoom === 1.0) resetView();
+        else draw();
+
+        updateCursor(e);
+    });
+
+    function handleZoomButton(factor) {
+        let targetZoom = zoom * factor;
+        if (targetZoom < 1.0) targetZoom = 1.0;
+        if (targetZoom > 15) targetZoom = 15;
+
+        const actualFactor = targetZoom / zoom;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+
+        panX = centerX - (centerX - panX) * actualFactor;
+        panY = centerY - (centerY - panY) * actualFactor;
+        zoom = targetZoom;
+
+        if (zoom === 1.0) resetView();
+        else draw();
+    }
+
+    function detectHoverHandle(imgX, imgY) {
+        if (selectedBoxIdx === -1 || isPanToolLocked) return null;
+        const hitRadius = 10 / (baseScale * zoom);
+        const b = boxes[selectedBoxIdx];
+        if (Math.abs(imgX - b.x1) < hitRadius && Math.abs(imgY - b.y1) < hitRadius) return 'TL';
+        if (Math.abs(imgX - b.x2) < hitRadius && Math.abs(imgY - b.y1) < hitRadius) return 'TR';
+        if (Math.abs(imgX - b.x1) < hitRadius && Math.abs(imgY - b.y2) < hitRadius) return 'BL';
+        if (Math.abs(imgX - b.x2) < hitRadius && Math.abs(imgY - b.y2) < hitRadius) return 'BR';
+        return null;
+    }
+
+    function getBoxAtCoords(imgX, imgY) {
+        if (isPanToolLocked) return -1;
+        for (let i = boxes.length - 1; i >= 0; i--) {
+            const b = boxes[i];
+            if (imgX >= b.x1 && imgX <= b.x2 && imgY >= b.y1 && imgY <= b.y2) return i;
+        }
+        return -1;
+    }
+
+    function updateCursor() {
+        if (isSpacePressed || isPanToolLocked || action === 'PANNING') {
+            canvas.style.cursor = action === 'PANNING' ? 'grabbing' : 'grab';
+            return;
+        }
+        if (hoverHandle) {
+            if (hoverHandle === 'TL' || hoverHandle === 'BR') canvas.style.cursor = 'nwse-resize';
+            else if (hoverHandle === 'TR' || hoverHandle === 'BL') canvas.style.cursor = 'nesw-resize';
+        } else if (getBoxAtCoords(currentImgX, currentImgY) !== -1) {
+            canvas.style.cursor = 'move';
+        } else {
+            canvas.style.cursor = 'crosshair';
+        }
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const coords = getImgCoords(e);
+
+        if (isSpacePressed || isPanToolLocked || e.button === 1 || e.button === 2) {
+            action = 'PANNING';
+            startX = e.clientX - panX;
+            startY = e.clientY - panY;
+            updateCursor();
+            return;
+        }
+
+        const handle = detectHoverHandle(coords.x, coords.y);
+        if (handle) {
+            action = 'RESIZING';
+            activeHandle = handle;
+            return;
+        }
+
+        const clickedBoxIdx = getBoxAtCoords(coords.x, coords.y);
+        if (clickedBoxIdx !== -1) {
+            selectedBoxIdx = clickedBoxIdx;
+            action = 'MOVING';
+            startImgX = coords.x;
+            startImgY = coords.y;
+            originalBoxState = { ...boxes[selectedBoxIdx] };
+            draw();
+            return;
+        }
+
+        selectedBoxIdx = -1;
+        action = 'DRAWING';
+        startImgX = coords.x;
+        startImgY = coords.y;
+        currentImgX = coords.x;
+        currentImgY = coords.y;
+        draw();
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        const coords = getImgCoords(e);
+        currentImgX = coords.x;
+        currentImgY = coords.y;
+
+        if (action === 'IDLE') {
+            hoverHandle = detectHoverHandle(coords.x, coords.y);
+            updateCursor();
+        }
+        else if (action === 'PANNING') {
+            panX = e.clientX - startX;
+            panY = e.clientY - startY;
+            draw();
+        }
+        else if (action === 'DRAWING') {
+            draw();
+        }
+        else if (action === 'RESIZING') {
+            const b = boxes[selectedBoxIdx];
+            if (activeHandle === 'TL') { b.x1 = currentImgX; b.y1 = currentImgY; }
+            if (activeHandle === 'TR') { b.x2 = currentImgX; b.y1 = currentImgY; }
+            if (activeHandle === 'BL') { b.x1 = currentImgX; b.y2 = currentImgY; }
+            if (activeHandle === 'BR') { b.x2 = currentImgX; b.y2 = currentImgY; }
+            draw();
+        }
+        else if (action === 'MOVING') {
+            const dx = currentImgX - startImgX;
+            const dy = currentImgY - startImgY;
+            const b = boxes[selectedBoxIdx];
+            b.x1 = originalBoxState.x1 + dx;
+            b.y1 = originalBoxState.y1 + dy;
+            b.x2 = originalBoxState.x2 + dx;
+            b.y2 = originalBoxState.y2 + dy;
+            draw();
+        }
+    });
+
+    canvas.addEventListener('mouseup', async (e) => {
+        if (action === 'DRAWING') {
+            const newBox = normalizeBox({ x1: startImgX, y1: startImgY, x2: currentImgX, y2: currentImgY });
+            if ((newBox.x2 - newBox.x1) > 10 && (newBox.y2 - newBox.y1) > 10) {
+                boxes.push(newBox);
+                selectedBoxIdx = boxes.length - 1;
+                await autoSave();
+            }
+        }
+        else if (action === 'RESIZING' || action === 'MOVING') {
+            boxes[selectedBoxIdx] = normalizeBox(boxes[selectedBoxIdx]);
+            activeHandle = null;
+            originalBoxState = null;
+            await autoSave();
+        }
+
+        action = 'IDLE';
+        draw();
+        updateCursor();
+    });
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    function normalizeBox(b) {
+        return {
+            x1: Math.round(Math.min(b.x1, b.x2)),
+            y1: Math.round(Math.min(b.y1, b.y2)),
+            x2: Math.round(Math.max(b.x1, b.x2)),
+            y2: Math.round(Math.max(b.y1, b.y2))
+        };
+    }
+
+    async function autoSave() {
+        const folder = fileTree[currentFolderIdx].folder;
+        const filename = fileTree[currentFolderIdx].images[currentImgIdx];
+        await fetch('/api/save_box', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folder, filename, boxes })
+        });
+    }
+
+    function navigateImage(direction) {
+        let currentFolder = fileTree[currentFolderIdx];
+
+        if (currentImgIdx + direction < currentFolder.images.length) {
+            loadImage(currentFolderIdx, currentImgIdx + direction);
+        } else if (currentFolderIdx + 1 < fileTree.length) {
+            // Replaced alert with elegant toast notification
+            showToast(`Newspaper: ${currentFolder.folder}. finished.`, "info");
+            loadImage(currentFolderIdx + 1, 0);
+        } else {
+            // Fallback just in case user clicks incredibly fast
+            showToast("All downloaded newspaper structures have been fully processed!", "warning");
+        }
+    }
+
+    async function generatePDF() {
+        const pdfBtn = document.getElementById('pdf-btn');
+        pdfBtn.innerText = "Compiling Layout...";
+        pdfBtn.disabled = true;
+        showToast("Generating A4 Newspaper Layout...", "info");
+
+        try {
+            const res = await fetch('/api/create_pdf', { method: 'POST' });
+
+            if (!res.ok) {
+                // If it failed, it sends a JSON error message
+                const data = await res.json();
+                throw new Error(data.message || "Failed to compile PDF");
+            }
+
+            // If success, the response is the actual PDF file Blob!
+            const blob = await res.blob();
+
+            // Create a temporary hidden link to force the browser to download the file
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = downloadUrl;
+
+            // Grab the filename from the backend headers, or default to a safe name
+            const contentDisposition = res.headers.get('Content-Disposition');
+            let fileName = 'extracted_articles.pdf';
+            if (contentDisposition && contentDisposition.includes('filename=')) {
+                fileName = contentDisposition.split('filename=')[1].replace(/"/g, '');
+            }
+            a.download = fileName;
+
+            document.body.appendChild(a);
+            a.click();
+
+            // Cleanup
+            window.URL.revokeObjectURL(downloadUrl);
+            document.body.removeChild(a);
+
+            showToast("PDF Downloaded Successfully!", "success");
+        } catch (err) {
+            showToast(`Error: ${err.message}`, "warning");
+        } finally {
+            pdfBtn.innerText = "Export PDF";
+            pdfBtn.disabled = false;
+        }
+    }
+
+    window.onload = loadTree;
+</script>
+</body>
+</html>
