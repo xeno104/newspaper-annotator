@@ -17,7 +17,8 @@ DOWNLOADS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'downloa
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 MASTER_API_DATA = {}
-CURRENT_DATE_STR = "20260529"
+CURRENT_DATE_OBJ = datetime.now()
+CURRENT_DATE_STR = CURRENT_DATE_OBJ.strftime("%Y%m%d")
 
 # =====================================================================
 # UTILITY: FONT LOADER
