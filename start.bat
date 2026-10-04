@@ -35,7 +35,7 @@ echo.
 
 :: 3. INSTALL DEPENDENCIES USING THE DETECTED PYTHON
 echo Checking dependencies (this takes a moment on first run)...
-%PYTHON_CMD% -m pip install Flask Pillow requests PyMuPDF beautifulsoup4 gdown --quiet
+%PYTHON_CMD% -m pip install -r requirements.txt --quiet
 
 echo.
 echo Launching the server and opening your browser...
